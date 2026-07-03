@@ -2,77 +2,269 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sega Dreamcast WebAssembly / WebGPU Sandbox Engine</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sega Dreamcast Emulation Runtime Environment</title>
     <style>
-        body { margin: 0; background: #0b0b0f; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
-        canvas { width: 640px; height: 480px; background: #000; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
-        #status { margin-top: 15px; color: #8a8a93; font-size: 14px; }
+        :root {
+            --bg-color: #0d0d11;
+            --panel-color: #16161f;
+            --accent-color: #e56b10; /* Classic Dreamcast Orange Accent */
+            --text-main: #f0f0f5;
+            --text-muted: #8e8e9f;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .emulator-container {
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-color);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        canvas {
+            width: 640px;
+            height: 480px;
+            background-color: #000;
+            border-radius: 6px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        .control-panel {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .btn {
+            background-color: rgba(255, 255, 255, 0.07);
+            color: var(--text-main);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover:not(:disabled) {
+            background-color: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-color);
+            border-color: transparent;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #ff7d24;
+        }
+
+        #fileSelector {
+            position: absolute;
+            font-size: 100px;
+            opacity: 0;
+            right: 0;
+            top: 0;
+            cursor: pointer;
+        }
+
+        #statusLog {
+            font-size: 13px;
+            color: var(--text-muted);
+            max-width: 320px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
     </style>
 </head>
 <body>
 
-    <canvas id="displayTarget" width="640" height="480"></canvas>
-    <div id="status">Awakening WebAssembly Runtime Environment...</div>
+    <div class="emulator-container">
+        <!-- Hardware PVR Graphics Target Output Window Component -->
+        <canvas id="dcDisplayOutput" width="640" height="480"></canvas>
 
+        <!-- Dynamic Control Interface Layer Components -->
+        <div class="control-panel">
+            <div class="file-input-wrapper">
+                <button class="btn">Select Game Folder</button>
+                <input type="file" id="fileSelector" webkitdirectory directory multiple />
+            </div>
+            
+            <div id="statusLog">System Idle. Awaiting WebAssembly boot validation...</div>
+            <button id="bootSystemBtn" class="btn btn-primary" disabled>Power On</button>
+        </div>
+    </div>
+
+    <!-- Inline Script Modules Structuring The Complete Web Sandbox Execution Ecosystem -->
     <script type="module">
-        import { WebGPURenderer } from './renderer.js';
+        // ============================================================================
+        // 1. EMBEDDED HIGH-PERFORMANCE WEBGPU RENDERING DISPATCHER CONTEXT
+        // ============================================================================
+        class WebGPURenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.device = null;
+                this.context = null;
+                this.format = "";
+            }
 
-        const canvas = document.getElementById('displayTarget');
-        const statusText = document.getElementById('status');
-        
-        let wasmModule = null;
-        let renderer = null;
-        let vramPtrOffset = 0;
+            async initialize() {
+                const adapter = await navigator.gpu?.requestAdapter();
+                this.device = await adapter?.requestDevice();
+                this.context = this.canvas.getContext('webgpu');
 
-        async function bootstrap() {
-            try {
-                renderer = new WebGPURenderer(canvas);
-                await renderer.initialize();
+                if (!this.device || !this.context) {
+                    throw new Error("WebGPU platform drivers are completely missing or disabled in this browser.");
+                }
 
-                statusText.innerText = "Downloading Compiled Emscripten Web Core Module...";
+                this.format = navigator.gpu.getPreferredCanvasFormat();
+                this.context.configure({
+                    device: this.device,
+                    format: this.format,
+                    alphaMode: 'opaque'
+                });
+                console.log("WebGPU Video Driver Attached successfully.");
+            }
+
+            renderFrame(wasmMemoryBuffer, vramOffset) {
+                if (!this.device) return;
                 
-                // Programmatically load and resolve the compiled production runtime module logic
-                const { default: createWasmCore } = await import('./dreamcast_core.js');
-                wasmModule = await createWasmCore();
-                
-                // Initialize internal storage frames
-                wasmModule._init_system();
-                vramPtrOffset = wasmModule._get_vram_ptr();
+                // Read directly from the exposed raw C++ WebAssembly VRAM Heap Pointer
+                const rawVramView = new Uint8Array(wasmMemoryBuffer, vramOffset, 8 * 1024 * 1024);
 
-                statusText.innerText = "System Operational. Running System Main Loop at 60 FPS.";
-                requestAnimationFrame(systemLifecycleTick);
-            } catch (error) {
-                statusText.innerText = `Initialization Error: ${error.message}`;
-                statusText.style.color = "#ff4a4a";
+                const commandEncoder = this.device.createCommandEncoder();
+                const textureView = this.context.getCurrentTexture().createView();
+
+                const renderPassDescriptor = {
+                    colorAttachments: [{
+                        view: textureView,
+                        clearValue: { r: 0.08, g: 0.08, b: 0.12, a: 1.0 },
+                        loadOp: 'clear',
+                        storeOp: 'store'
+                    }]
+                };
+
+                const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+                // System layout binding transformations take place inside this instruction slot
+                passEncoder.end();
+
+                this.device.queue.submit([commandEncoder.finish()]);
             }
         }
 
-        function readControllerInputs() {
-            const pads = navigator.getGamepads();
-            if (!pads || !pads[0]) return;
-            
-            let digitalInputBitmask = 0;
-            const primaryPad = pads[0];
+        // ============================================================================
+        // 2. EMBEDDED HTML5 FILE API STANDARD .GDI EXTENSION PARSER MODULE
+        // ============================================================================
+        class DreamcastDiscParser {
+            constructor() {
+                this.tracks = [];
+            }
 
-            if (primaryPad.buttons[0].pressed) digitalInputBitmask |= (1 << 2);  // Map physical cross code down to virtual "A"
-            if (primaryPad.buttons[1].pressed) digitalInputBitmask |= (1 << 3);  // Map physical circle code down to virtual "B"
-            
-            wasmModule._update_controllers(digitalInputBitmask);
+            async parseGDI(gdiFile, siblingFiles) {
+                const text = await gdiFile.text();
+                const lines = text.split('\n');
+                if (lines.length < 2) throw new Error("Target GDI descriptor file is structural corrupted or empty.");
+
+                const trackCount = parseInt(lines[0].trim(), 10);
+                this.tracks = [];
+
+                for (let i = 1; i <= trackCount; i++) {
+                    if (!lines[i]) continue;
+                    const tokens = lines[i].trim().split(/\s+/);
+                    if (tokens.length < 5) continue;
+
+                    const trackNum = parseInt(tokens[0], 10);
+                    const sectorSize = parseInt(tokens[3], 10);
+                    const filename = tokens[4].replace(/"/g, '');
+
+                    const matchFile = siblingFiles.find(f => f.name.toLowerCase() === filename.toLowerCase());
+                    if (matchFile) {
+                        this.tracks.push({
+                            number: trackNum,
+                            sectorSize: sectorSize,
+                            fileHandle: matchFile,
+                            buffer: await matchFile.arrayBuffer()
+                        });
+                    }
+                }
+                return this.tracks;
+            }
         }
 
-        function systemLifecycleTick() {
-            readControllerInputs();
+        // ============================================================================
+        // 3. MAIN RUNTIME LIFECYCLE MANAGEMENT IMPLEMENTATION
+        // ============================================================================
+        const canvas = document.getElementById('dcDisplayOutput');
+        const fileSelector = document.getElementById('fileSelector');
+        const bootSystemBtn = document.getElementById('bootSystemBtn');
+        const statusLog = document.getElementById('statusLog');
 
-            // Fire target operational load requirements needed per cycle frame target (200MHz / 60 FPS)
-            wasmModule._run_cycles(3333333);
+        const renderer = new WebGPURenderer(canvas);
+        const discParser = new DreamcastDiscParser();
 
-            // Access underlying execution heap structure directly
-            renderer.renderFrame(wasmModule.HEAPU8.buffer, vramPtrOffset);
+        let wasmModule = null;
+        let vramPtrOffset = 0;
+        let gameFiles = [];
+        let executionTrackBuffer = null;
 
-            requestAnimationFrame(systemLifecycleTick);
+        async function initEmulatorRuntime() {
+            try {
+                await renderer.initialize();
+                statusTextUpdate("Loading Emscripten Core Web Engine Modules...");
+
+                // Dynamic runtime instantiation linking to the automated compiler outputs
+                const { default: createWasmCore } = await import('./dreamcast_core.js');
+                wasmModule = await createWasmCore();
+
+                wasmModule._init_system();
+                vramPtrOffset = wasmModule._get_vram_ptr();
+
+                statusTextUpdate("Core Ready. Select a Dreamcast GDI game folder directory.");
+            } catch (err) {
+                statusTextUpdate(`Runtime Error: ${err.message}`, true);
+            }
         }
 
-        bootstrap();
-    </script>
-</body>
-</html>
+        function statusTextUpdate(message, isError = false) {
+            statusLog.innerText = message;
+            statusLog.style.color = isError ? "#ff5252" : "#8e8e9f";
+        }
+
+        // Handle folder input drag-drop mapping
+        fileSelector.addEventListener('change', async (e) => {
+            gameFiles = Array.from(e.target.files);
+            const targetGDI = gameFiles.find(f => f.name.toLowerCase().endsWith('.gdi'));
+
+            if (!targetGDI) {
