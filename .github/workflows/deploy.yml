@@ -1,0 +1,40 @@
+name: Generate Core Production Release Bundles
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  assemble-artifacts:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Source Assets
+      uses: actions/checkout@v4
+
+    - name: Instantiate Emscripten Environment Execution SDK
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 'latest'
+
+    - name: Execute Project System Builds
+      run: |
+        mkdir engine_build
+        cd engine_build
+        emcmake cmake ..
+        emmake make
+
+    - name: Stage Operational Artifact Bundles for Delivery
+      run: |
+        mkdir dist_payload
+        cp engine_build/dreamcast_core.js dist_payload/
+        cp engine_build/dreamcast_core.wasm dist_payload/
+        cp -r web/* dist_payload/
+
+    - name: Upload Finished Deployment Packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: raw-dreamcast-webgpu-emulator
+        path: dist_payload/
