@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sega Dreamcast WebAssembly / WebGPU Sandbox Engine</title>
+    <style>
+        body { margin: 0; background: #0b0b0f; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+        canvas { width: 640px; height: 480px; background: #000; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
+        #status { margin-top: 15px; color: #8a8a93; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <canvas id="displayTarget" width="640" height="480"></canvas>
+    <div id="status">Awakening WebAssembly Runtime Environment...</div>
+
+    <script type="module">
+        import { WebGPURenderer } from './renderer.js';
+
+        const canvas = document.getElementById('displayTarget');
+        const statusText = document.getElementById('status');
+        
+        let wasmModule = null;
+        let renderer = null;
+        let vramPtrOffset = 0;
+
+        async function bootstrap() {
+            try {
+                renderer = new WebGPURenderer(canvas);
+                await renderer.initialize();
+
+                statusText.innerText = "Downloading Compiled Emscripten Web Core Module...";
+                
+                // Programmatically load and resolve the compiled production runtime module logic
+                const { default: createWasmCore } = await import('./dreamcast_core.js');
+                wasmModule = await createWasmCore();
+                
+                // Initialize internal storage frames
+                wasmModule._init_system();
+                vramPtrOffset = wasmModule._get_vram_ptr();
+
+                statusText.innerText = "System Operational. Running System Main Loop at 60 FPS.";
+                requestAnimationFrame(systemLifecycleTick);
+            } catch (error) {
+                statusText.innerText = `Initialization Error: ${error.message}`;
+                statusText.style.color = "#ff4a4a";
+            }
+        }
+
+        function readControllerInputs() {
+            const pads = navigator.getGamepads();
+            if (!pads || !pads[0]) return;
+            
+            let digitalInputBitmask = 0;
+            const primaryPad = pads[0];
+
+            if (primaryPad.buttons[0].pressed) digitalInputBitmask |= (1 << 2);  // Map physical cross code down to virtual "A"
+            if (primaryPad.buttons[1].pressed) digitalInputBitmask |= (1 << 3);  // Map physical circle code down to virtual "B"
+            
+            wasmModule._update_controllers(digitalInputBitmask);
+        }
+
+        function systemLifecycleTick() {
+            readControllerInputs();
+
+            // Fire target operational load requirements needed per cycle frame target (200MHz / 60 FPS)
+            wasmModule._run_cycles(3333333);
+
+            // Access underlying execution heap structure directly
+            renderer.renderFrame(wasmModule.HEAPU8.buffer, vramPtrOffset);
+
+            requestAnimationFrame(systemLifecycleTick);
+        }
+
+        bootstrap();
+    </script>
+</body>
+</html>
